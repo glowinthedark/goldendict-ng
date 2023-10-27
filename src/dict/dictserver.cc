@@ -338,12 +338,14 @@ void DictServerDictionary::getServerDatabasesAfterConnect()
   }
 }
 
+class DictServerWordSearchWorker;
+
 class DictServerWordSearchRequest: public Dictionary::WordSearchRequest
 {
   QAtomicInt isCancelled;
   wstring word;
   QString errorString;
-  QFuture< void > f;
+  QThread workerThread;
   DictServerDictionary & dict;
 
 public:
@@ -352,24 +354,36 @@ public:
     word( word_ ),
     dict( dict_ )
   {
-    f = QtConcurrent::run( [ this ]() {
-      this->run();
-    } );
-  }
+    DictServerWordSearchWorker * worker = new DictServerWordSearchWorker( word_, dict_ );
+    worker->moveToThread( &workerThread );
+    connect( &workerThread, &QThread::finished, worker, &QObject::deleteLater );
+    connect( this, &DictServerWordSearchRequest::operate, worker, &DictServerWordSearchWorker::run );
+    connect( this, &DictServerWordSearchRequest::cancelSignal, worker, &DictServerWordSearchWorker::cancel );
+    connect( worker, &DictServerWordSearchWorker::handleResults, this, &DictServerWordSearchRequest::handleResults );
+    workerThread.start();
 
-  void run();
+    emit operate();
+  }
 
   ~DictServerWordSearchRequest() override
   {
-    f.waitForFinished();
+    workerThread.quit();
+    workerThread.wait();
   }
 
   void cancel() override;
+public slots:
+  void handleResults( const QStringList & );
+signals:
+  void operate();
+  void cancelSignal();
 };
 
 
 class DictServerWordSearchWorker: public QObject
 {
+  Q_OBJECT
+
   QAtomicInt isCancelled;
   wstring word;
   QString errorString;
@@ -391,7 +405,7 @@ public slots:
     isCancelled.ref();
   }
   signals:
-    handleResults(QStringList);
+    handleResults(const QStringList &);
     finishedResult();
 };
 
@@ -531,6 +545,7 @@ void DictServerWordSearchWorker::run()
 void DictServerWordSearchRequest::cancel()
 {
   isCancelled.ref();
+  emit cancelSignal();
   finish();
 }
 
