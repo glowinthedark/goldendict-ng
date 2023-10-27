@@ -367,10 +367,37 @@ public:
   void cancel() override;
 };
 
-void DictServerWordSearchRequest::run()
+
+class DictServerWordSearchWorker: public QObject
+{
+  QAtomicInt isCancelled;
+  wstring word;
+  QString errorString;
+  DictServerDictionary & dict;
+
+public:
+
+  DictServerWordSearchWorker( wstring const & word_, DictServerDictionary & dict_ ):
+    word( word_ ),
+    dict( dict_ )
+  {
+
+  }
+
+public slots:
+  void run();
+
+  void cancel() {
+    isCancelled.ref();
+  }
+  signals:
+    handleResults(QStringList);
+    finishedResult();
+};
+
+void DictServerWordSearchWorker::run()
 {
   if ( Utils::AtomicInt::loadAcquire( isCancelled ) ) {
-    finish();
     return;
   }
 
@@ -483,6 +510,8 @@ void DictServerWordSearchRequest::run()
         for ( int x = 0; x < count; x++ )
           matches.emplace_back( gd::toWString( matchesList.at( x ) ) );
       }
+      emit handleResults( matches );
+
     }
   }
 
@@ -496,8 +525,7 @@ void DictServerWordSearchRequest::run()
 
   delete socket;
   socket = nullptr;
-  if ( !Utils::AtomicInt::loadAcquire( isCancelled ) )
-    finish();
+  emit finishedResult();
 }
 
 void DictServerWordSearchRequest::cancel()
