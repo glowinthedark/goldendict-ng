@@ -343,10 +343,8 @@ void DictServerDictionary::getServerDatabasesAfterConnect()
 }
 
 
-class DictServerWordSearchWorker: public QObject
+class DictServerWordSearchWorker: public DictServerWordSearchWorkerSlot
 {
-  Q_OBJECT
-
   QAtomicInt isCancelled;
   wstring word;
   QString errorString;
@@ -361,22 +359,18 @@ public:
 
   }
 
-public slots:
+public :
   void run();
-
-  void cancel() {
-    isCancelled.ref();
-  }
-signals:
-  void handleResults(const QStringList &);
-  void finish();
+  void cancel();
 };
 
+void DictServerWordSearchWorker::cancel(){
+  isCancelled.ref();
+}
 
-class DictServerWordSearchRequest: public Dictionary::WordSearchRequest
+
+class DictServerWordSearchRequest: public DictServerWordSearchRequestSlot
 {
-  Q_OBJECT
-
   QAtomicInt isCancelled;
   QString errorString;
   QThread workerThread;
@@ -404,19 +398,17 @@ public:
   }
 
   void cancel() override;
-public slots:
+public :
   void handleResults( const QStringList & );
-signals:
-  void operate();
-  void cancelSignal();
+
 };
 
 void DictServerWordSearchRequest::handleResults( const QStringList & matchesList)
 {
   if ( !matchesList.isEmpty() ) {
     QMutexLocker _( &dataMutex );
-    for ( int x = 0; x < matchesList.size(); x++ )
-      matches.emplace_back( gd::toWString( matchesList.at( x ) ) );
+    for (const auto & x : matchesList)
+      matches.emplace_back( gd::toWString( x ) );
   }
 }
 
