@@ -163,12 +163,10 @@ void disconnectFromServer( QTcpSocket & socket )
 class DictServerDictionary: public Dictionary::Class
 {
   string name;
-  QString url, icon;
+  QString icon;
   quint32 langId;
   QString errorString;
   QTcpSocket socket;
-  QStringList databases;
-  QStringList strategies;
   QStringList serverDatabases;
 
 public:
@@ -252,6 +250,12 @@ public:
   }
 
   QString const & getDescription() override;
+
+  QString url;
+
+  QStringList databases;
+
+  QStringList strategies;
 
 protected:
 
@@ -338,47 +342,6 @@ void DictServerDictionary::getServerDatabasesAfterConnect()
   }
 }
 
-class DictServerWordSearchWorker;
-
-class DictServerWordSearchRequest: public Dictionary::WordSearchRequest
-{
-  QAtomicInt isCancelled;
-  wstring word;
-  QString errorString;
-  QThread workerThread;
-  DictServerDictionary & dict;
-
-public:
-
-  DictServerWordSearchRequest( wstring const & word_, DictServerDictionary & dict_ ):
-    word( word_ ),
-    dict( dict_ )
-  {
-    DictServerWordSearchWorker * worker = new DictServerWordSearchWorker( word_, dict_ );
-    worker->moveToThread( &workerThread );
-    connect( &workerThread, &QThread::finished, worker, &QObject::deleteLater );
-    connect( this, &DictServerWordSearchRequest::operate, worker, &DictServerWordSearchWorker::run );
-    connect( this, &DictServerWordSearchRequest::cancelSignal, worker, &DictServerWordSearchWorker::cancel );
-    connect( worker, &DictServerWordSearchWorker::handleResults, this, &DictServerWordSearchRequest::handleResults );
-    workerThread.start();
-
-    emit operate();
-  }
-
-  ~DictServerWordSearchRequest() override
-  {
-    workerThread.quit();
-    workerThread.wait();
-  }
-
-  void cancel() override;
-public slots:
-  void handleResults( const QStringList & );
-signals:
-  void operate();
-  void cancelSignal();
-};
-
 
 class DictServerWordSearchWorker: public QObject
 {
@@ -404,10 +367,59 @@ public slots:
   void cancel() {
     isCancelled.ref();
   }
-  signals:
-    handleResults(const QStringList &);
-    finishedResult();
+signals:
+  void handleResults(const QStringList &);
+  void finish();
 };
+
+
+class DictServerWordSearchRequest: public Dictionary::WordSearchRequest
+{
+  Q_OBJECT
+
+  QAtomicInt isCancelled;
+  QString errorString;
+  QThread workerThread;
+
+public:
+
+  DictServerWordSearchRequest( wstring const & word_, DictServerDictionary & dict_ )
+  {
+    DictServerWordSearchWorker * worker = new DictServerWordSearchWorker( word_, dict_ );
+    worker->moveToThread( &workerThread );
+    connect( &workerThread, &QThread::finished, worker, &QObject::deleteLater );
+    connect( this, &DictServerWordSearchRequest::operate, worker, &DictServerWordSearchWorker::run );
+    connect( this, &DictServerWordSearchRequest::cancelSignal, worker, &DictServerWordSearchWorker::cancel );
+    connect( worker, &DictServerWordSearchWorker::handleResults, this, &DictServerWordSearchRequest::handleResults );
+    connect( worker, &DictServerWordSearchWorker::finish, this, &DictServerWordSearchRequest::finish );
+    workerThread.start();
+
+    emit operate();
+  }
+
+  ~DictServerWordSearchRequest() override
+  {
+    workerThread.quit();
+    workerThread.wait();
+  }
+
+  void cancel() override;
+public slots:
+  void handleResults( const QStringList & );
+signals:
+  void operate();
+  void cancelSignal();
+};
+
+void DictServerWordSearchRequest::handleResults( const QStringList & matchesList)
+{
+  if ( !matchesList.isEmpty() ) {
+    QMutexLocker _( &dataMutex );
+    for ( int x = 0; x < matchesList.size(); x++ )
+      matches.emplace_back( gd::toWString( matchesList.at( x ) ) );
+  }
+}
+
 
 void DictServerWordSearchWorker::run()
 {
@@ -517,14 +529,13 @@ void DictServerWordSearchWorker::run()
 
       int count = matchesList.size();
       if ( count > MAX_MATCHES_COUNT )
+      {
         count = MAX_MATCHES_COUNT;
-
-      if ( count ) {
-        QMutexLocker _( &dataMutex );
-        for ( int x = 0; x < count; x++ )
-          matches.emplace_back( gd::toWString( matchesList.at( x ) ) );
+        matchesList.remove(MAX_MATCHES_COUNT,count-MAX_MATCHES_COUNT);
       }
-      emit handleResults( matches );
+
+
+      emit handleResults( matchesList );
 
     }
   }
@@ -539,7 +550,7 @@ void DictServerWordSearchWorker::run()
 
   delete socket;
   socket = nullptr;
-  emit finishedResult();
+  emit finish();
 }
 
 void DictServerWordSearchRequest::cancel()
