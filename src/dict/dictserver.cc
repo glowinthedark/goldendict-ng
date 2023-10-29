@@ -342,32 +342,24 @@ class DictServerWordSearchRequest: public Dictionary::WordSearchRequest
   QAtomicInt isCancelled;
   wstring word;
   QString errorString;
-  QFuture< void > f;
   DictServerDictionary & dict;
-  QTcpSocket * socket = 0;
-
-  QThread * thread;
+  QTcpSocket * socket = nullptr;
 
 public:
 
-  DictServerWordSearchRequest( wstring const & word_, DictServerDictionary & dict_ ):
-    word( word_ ),
+  DictServerWordSearchRequest( wstring  word_, DictServerDictionary & dict_ ):
+    word(std::move( word_ )),
     dict( dict_ )
   {
-    thread = new QThread;
 
-    socket = new QTcpSocket( thread );
+    socket = new QTcpSocket( this );
 
     if ( !socket ) {
       finish();
       return;
     }
 
-    connect( thread, &QThread::started, this, [ this ]() {
-      this->run();
-    } );
-
-    thread->start();
+    this->run();
   }
 
   void run();
@@ -378,11 +370,7 @@ public:
       disconnectFromServer( *socket );
       delete socket;
     }
-    thread->quit();
-    thread->wait();
-    thread->deleteLater();
 
-    //    f.waitForFinished();
   }
 
   void cancel() override;
