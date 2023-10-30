@@ -20,6 +20,7 @@ void PronounceEngine::reset()
 
 void PronounceEngine::sendAudio( std::string dictId, QString audioLink )
 {
+  qDebug()<<"receive audio:"<<audioLink<<",dictId:"<<dictId.c_str();
   if ( state == PronounceState::OCCUPIED )
     return;
 
@@ -33,6 +34,7 @@ void PronounceEngine::sendAudio( std::string dictId, QString audioLink )
 
 void PronounceEngine::finishDictionary( std::string dictId )
 {
+  qDebug()<<"receive audio finished dictId:"<<dictId.c_str();
   if ( state == PronounceState::OCCUPIED )
     return;
 
