@@ -1,11 +1,11 @@
 name: deploy_website 
 
 on:
-  push:
-    branches:
-      - staged 
-    paths:
-      - 'website/**'
+  # push:
+  #   branches:
+  #     - staged 
+  #   paths:
+  #     - 'website/**'
   workflow_dispatch:
 
 permissions:
